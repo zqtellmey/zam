@@ -21,7 +21,7 @@ jobs:
     - name: 安装系统依赖及虚拟桌面环境
       run: |
         sudo apt-get update
-        sudo apt-get install -y xvfb x11-utils libxss1 libappindicator1 libgconf-2-4 libxi6 libgbm1
+        sudo apt-get install -y xvfb x11-utils libxss1 libxi6 libgbm1
 
     - name: 安装 Python 依赖包
       run: |
