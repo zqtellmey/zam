@@ -21,7 +21,11 @@ jobs:
     - name: 安装依赖
       run: |
         npm init -y
-        npm install playwright axios
+        npm install playwright axios form-data
+
+    - name: 安装 Playwright 浏览器内核
+      run: npx playwright install chromium
+
     - name: 安装并启动代理 (全自动适配内核)
       env:
           PROXY_NODE: ${{ secrets.PROXY_NODE }}
@@ -141,5 +145,6 @@ jobs:
         ZAMPTO_PASSWORD: ${{ secrets.ZAMPTO_PASSWORD }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
       run: |
         node renew.js
