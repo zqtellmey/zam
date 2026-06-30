@@ -13,18 +13,19 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
-    - name: 设置 Node.js 环境
-      uses: actions/setup-node@v4
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v5
       with:
-        node-version: '20'
+        python-version: '3.10'
 
-    - name: 安装依赖
+    - name: 安装系统依赖及虚拟桌面环境
       run: |
-        npm init -y
-        npm install playwright axios form-data
+        sudo apt-get update
+        sudo apt-get install -y xvfb x11-utils libxss1 libappindicator1 libgconf-2-4 libxi6 libgbm1
 
-    - name: 安装 Playwright 浏览器内核
-      run: npx playwright install chromium
+    - name: 安装 Python 依赖包
+      run: |
+        pip install seleniumbase requests pyvirtualdisplay
 
     - name: 安装并启动代理 (全自动适配内核)
       env:
@@ -67,7 +68,7 @@ jobs:
 
               outbound = {"tag": "proxy", "server": server, "server_port": port}
 
-              # --- 分流逻辑 1: VLESS (针对普通 TLS + WS 优化) ---
+              # --- 分流逻辑 1: VLESS ---
               if scheme == "vless":
                   outbound.update({
                       "type": "vless",
@@ -75,14 +76,12 @@ jobs:
                       "packet_encoding": "xudp",
                       "tls": {"enabled": True, "server_name": sni, "insecure": True}
                   })
-                  # 特别处理：如果是 WebSocket 传输
                   if params.get("type") == "ws":
                       outbound["transport"] = {
                           "type": "ws",
                           "path": unquote(params.get("path", "/")),
                           "headers": {"Host": sni}
                       }
-                  # 特别处理：如果是 Reality 模式
                   if params.get("security") == "reality":
                       outbound["tls"]["reality"] = {
                           "enabled": True,
@@ -90,7 +89,7 @@ jobs:
                           "short_id": params.get("sid", "")
                       }
 
-              # --- 分流逻辑 2: TUIC (保持原本可用的配置) ---
+              # --- 分流逻辑 2: TUIC ---
               elif scheme == "tuic":
                   u, pwd = raw_auth.split(':', 1) if ':' in raw_auth else (raw_auth, "")
                   outbound.update({
@@ -99,7 +98,7 @@ jobs:
                       "tls": {"enabled": True, "server_name": sni, "alpn": ["h3"], "insecure": True}
                   })
 
-              # --- 分流逻辑 3: Hysteria2 / VMess 兜底 ---
+              # --- 分流逻辑 3: Hysteria2 / VMess ---
               elif scheme in ["hysteria2", "hy2"]:
                   outbound.update({
                       "type": "hysteria2", "password": raw_auth,
@@ -129,15 +128,15 @@ jobs:
           
           # 4. 连通性最终验证
           if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://www.google.com > /dev/null; then
-            echo "[INFO] ✅ 代理适配成功！当前协议: $(jq -r '.outbounds[0].type' config.json | tr '[:lower:]' '[:upper:]')"
+            echo "[INFO] ✅ 代理适配成功！"
             echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
           else
-            echo "[ERROR] ❌ 代理连接失败。脱敏配置预览如下："
-            jq 'del(.outbounds[0].uuid, .outbounds[0].password)' config.json
-            echo "--- 错误日志预览 ---"
-            cat proxy.log
+            echo "[ERROR] ❌ 代理连接失败。"
             exit 1
           fi
+
+    - name: 初始化 SeleniumBase 浏览器核心
+      run: seleniumbase install chromedriver
 
     - name: 执行续期脚本
       env:
@@ -147,4 +146,4 @@ jobs:
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
       run: |
-        node renew.js
+        python3 renew.py
