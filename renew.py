@@ -29,6 +29,30 @@ def send_telegram_notification(text, screenshot_path=None):
         except Exception as e:
             print(f"发送 TG 截图失败: {e}")
 
+def remove_ads_via_css(page):
+    """通过注入 CSS 强行隐藏常见的广告容器和弹窗，不触发反广告拦截"""
+    try:
+        ad_css = """
+        /* 隐藏常见的广告框架、Google 广告容器以及各种漂浮浮窗 */
+        ins.adsbygoogle, 
+        div[id^='google_ads_iframe'], 
+        iframe[id^='google_ads_iframe'],
+        div[class*='ad-'], 
+        div[class*='banner'],
+        div[style*='position: fixed'][style*='bottom: 0'], /* 精准隐藏底部遮挡浮窗 */
+        div[style*='position:fixed'][style*='bottom:0'] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            height: 0 !important;
+            width: 0 !important;
+        }
+        """
+        page.add_style_tag(content=ad_css)
+        print("已成功注入隐藏广告的 CSS 样式。")
+    except Exception as e:
+        print(f"注入广告屏蔽样式失败 (跳过): {e}")
+
 def run():
     if not EMAIL or not PASSWORD:
         print("错误: 未配置账号或密码环境变量！")
@@ -52,6 +76,10 @@ def run():
             print("正在访问登录页面...")
             page.goto("https://dash.zampto.net/auth/login", wait_until="networkidle")
             
+            # 【移除广告】在页面加载完成后，立刻注入样式隐藏广告
+            remove_ads_via_css(page)
+            page.wait_for_timeout(1000)
+
             # 处理欧洲 IP 隐私提示框
             privacy_selectors = [
                 "text=Accept All", "text=Allow", "text=Agree", "text=Consent", 
@@ -64,12 +92,18 @@ def run():
                         element.click()
                         print(f"已自动处理隐私弹窗: {selector}")
                         page.wait_for_timeout(1000)
+                        # 弹窗消失后，可能又有新广告刷新，再次清理
+                        remove_ads_via_css(page)
                         break
                 except:
                     continue
 
+            # 先强行点击一次输入框确保焦点定位正确，再进行填写
             print("输入账号密码...")
+            page.click("#email")
             page.fill("#email", EMAIL)
+            
+            page.click("#password")
             page.fill("#password", PASSWORD)
             page.wait_for_timeout(1000)
             
@@ -102,6 +136,9 @@ def run():
             # =================================================================
             print("正在跳转到服务器续期页面...")
             page.goto("https://dash.zampto.net/server?id=6932", wait_until="networkidle")
+            
+            # 同样在内页注入 CSS 清理广告，防止续期按钮被挡住
+            remove_ads_via_css(page)
             page.wait_for_timeout(4000)
 
             if "/auth/login" in page.url:
