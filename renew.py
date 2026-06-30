@@ -29,30 +29,6 @@ def send_telegram_notification(text, screenshot_path=None):
         except Exception as e:
             print(f"发送 TG 截图失败: {e}")
 
-def remove_ads_via_css(page):
-    """通过注入 CSS 强行隐藏常见的广告容器和弹窗，不触发反广告拦截"""
-    try:
-        ad_css = """
-        /* 隐藏常见的广告框架、Google 广告容器以及各种漂浮浮窗 */
-        ins.adsbygoogle, 
-        div[id^='google_ads_iframe'], 
-        iframe[id^='google_ads_iframe'],
-        div[class*='ad-'], 
-        div[class*='banner'],
-        div[style*='position: fixed'][style*='bottom: 0'], /* 精准隐藏底部遮挡浮窗 */
-        div[style*='position:fixed'][style*='bottom:0'] {
-            display: none !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
-            height: 0 !important;
-            width: 0 !important;
-        }
-        """
-        page.add_style_tag(content=ad_css)
-        print("已成功注入隐藏广告的 CSS 样式。")
-    except Exception as e:
-        print(f"注入广告屏蔽样式失败 (跳过): {e}")
-
 def run():
     if not EMAIL or not PASSWORD:
         print("错误: 未配置账号或密码环境变量！")
@@ -69,16 +45,15 @@ def run():
         )
         page = context.new_page()
 
+        # 【不做任何广告过滤和隐藏拦截】完全维持原生态页面，规避反广告拦截检测
+
         try:
             # =================================================================
             # 阶段 1：登录操作与验证
             # =================================================================
             print("正在访问登录页面...")
             page.goto("https://dash.zampto.net/auth/login", wait_until="networkidle")
-            
-            # 【移除广告】在页面加载完成后，立刻注入样式隐藏广告
-            remove_ads_via_css(page)
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(2000)
 
             # 处理欧洲 IP 隐私提示框
             privacy_selectors = [
@@ -92,18 +67,16 @@ def run():
                         element.click()
                         print(f"已自动处理隐私弹窗: {selector}")
                         page.wait_for_timeout(1000)
-                        # 弹窗消失后，可能又有新广告刷新，再次清理
-                        remove_ads_via_css(page)
                         break
                 except:
                     continue
 
-            # 先强行点击一次输入框确保焦点定位正确，再进行填写
             print("输入账号密码...")
-            page.click("#email")
+            # 聚焦并输入（通过原生 focus 避免被浮层打断焦点）
+            page.locator("#email").focus()
             page.fill("#email", EMAIL)
             
-            page.click("#password")
+            page.locator("#password").focus()
             page.fill("#password", PASSWORD)
             page.wait_for_timeout(1000)
             
@@ -113,20 +86,29 @@ def run():
                 login_btn = page.locator("button[type='submit']").first
 
             login_btn.wait_for(state="visible", timeout=5000)
-            login_btn.click(force=True) 
+            
+            # 关键改进：使用 element.click(force=True) 会在内部尝试绕过遮挡直接分发事件。
+            # 如果依然失败，则使用 evaluate 直接通过页面底层执行 JS 的 HTMLElement.click() 触发点击，
+            # 这种方式属于引擎级行为，不需要考虑任何视觉遮挡或焦点问题！
+            try:
+                login_btn.click(force=True, timeout=3000)
+            except Exception:
+                print("标准点击遭遇阻挡，改用底层 JS 强制触发登录点击...")
+                login_btn.evaluate("element => element.click()")
             
             # 兜底回车提交
             page.wait_for_timeout(2000)
             if page.url.endswith("/auth/login"): 
-                print("点击可能未触发，尝试在密码框按下 Enter 键...")
+                print("尝试在密码框按下 Enter 键提交表单...")
                 page.press("#password", "Enter")
 
             # 【核心检查点】等待并判断是否成功脱离登录页
             print("等待登录结果...")
             page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(2000)
             
             if "/auth/login" in page.url:
-                raise Exception("登录失败：表单提交后未能成功跳转，仍停留在登录页面。请检查账号密码、验证码或登录按钮点击是否生效。")
+                raise Exception("登录失败：表单提交后未能成功跳转，仍停留在登录页面。请检查账号密码、验证码。")
             
             print("✅ 登录成功，成功通过第一阶段。")
             status_msg += "✅ 成功登录控制台。\n"
@@ -136,10 +118,7 @@ def run():
             # =================================================================
             print("正在跳转到服务器续期页面...")
             page.goto("https://dash.zampto.net/server?id=6932", wait_until="networkidle")
-            
-            # 同样在内页注入 CSS 清理广告，防止续期按钮被挡住
-            remove_ads_via_css(page)
-            page.wait_for_timeout(4000)
+            page.wait_for_timeout(5000) # 保持广告完整渲染所需时间
 
             if "/auth/login" in page.url:
                 raise Exception("登录态失效：访问服务器页面时被重新定向到了登录页。")
@@ -153,7 +132,14 @@ def run():
                 raise Exception("未找到续期按钮：页面加载成功，但未能在当前页面上找到 'Renew Server' 按钮。可能已经处于续期最大时限，或页面结构发生变化。")
                 
             print("找到 Renew 按钮，准备点击...")
-            renew_btn.click(force=True)
+            # 同样对续期按钮使用防遮挡的双重点击策略
+            try:
+                renew_btn.scroll_into_view_if_needed() # 先尝试滚动使其展露
+                renew_btn.click(force=True, timeout=3000)
+            except Exception:
+                print("续期按钮可能被广告遮挡，使用底层 JS 强行激活点击...")
+                renew_btn.evaluate("element => element.click()")
+
             status_msg += "✅ 成功触发 Renew 按钮，正在等待操作框完成...\n"
             
             print("已点击续期，等待 12 秒让操作框完成...")
