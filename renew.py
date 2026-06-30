@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - 核心逻辑完美焊死 + 修复新版到期时间提取逻辑
+Zampto 自动续期脚本 - 核心逻辑完美焊死 + 修复新版到期时间提取 JS 语法
 """
 
 import os
@@ -166,7 +166,7 @@ def login(sb, user: str, pwd: str) -> bool:
             pass
         return False
 
-# --- 针对获取机制升级的续期逻辑 (登录和穿透绝不动，仅修正时间文本的 JS 解析函数) ---
+# --- 续期逻辑 (登录、点击与CF处理完美焊死，仅修复了提取时间的JS闭包语法错误) ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -175,16 +175,18 @@ def renew_server(sb, sid: str) -> bool:
         
         handle_privacy_modal(sb)
         
-        # 【完美匹配新版前端】通过遍历文本提取 Expiry (Next Renewal) 里面的实际时间内容
+        # 使用立即执行匿名函数解决 JavaScript 的全局 return 语法报错问题
         js_get_expiry = '''
-            var divs = document.querySelectorAll("div");
-            for (var i = 0; i < divs.length; i++) {
-                if (divs[i].textContent.includes("Expiry (Next Renewal):")) {
-                    var span = divs[i].querySelector("span");
-                    if (span) return span.textContent.trim();
+            return (() => {
+                var divs = document.querySelectorAll("div");
+                for (var i = 0; i < divs.length; i++) {
+                    if (divs[i].textContent.includes("Expiry (Next Renewal):")) {
+                        var span = divs[i].querySelector("span");
+                        if (span) return span.textContent.trim();
+                    }
                 }
-            }
-            return "";
+                return "";
+            })();
         '''
         
         # 获取续期前的时间状态
