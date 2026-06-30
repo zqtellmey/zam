@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - 登录截图完美焊死 + 100%严格复刻CF逻辑版
+Zampto 自动续期脚本 - 按钮完全对齐老脚本 + 登录截图完全焊死版
 """
 
 import os
@@ -76,20 +76,16 @@ def notify(ok: bool, stage: str, msg: str = "", img: str = None):
     except Exception as e: 
         print(f"[ERROR] 发送 TG 通知失败: {e}")
 
-# --- 【100% 严格复刻老脚本核心】CF 过检机制 ---
+# --- 【100% 严格复刻老脚本核心】CF 过检机制 (焊死不变) ---
 def handle_turnstile_exact_replica(sb) -> bool:
     try:
         print("[INFO] ⏱️ 预留 5 秒等待 Cloudflare 拦截层加载...")
-        # 100%对齐：换用原生 sb.sleep，让浏览器驱动状态在后台正确同步
         sb.sleep(5)
         
-        # 100%对齐：严格检查页面是否存在验证码输入框
         has_turnstile = sb.execute_script('return document.querySelector("input[name=\'cf-turnstile-response\']") !== null')
         
         if has_turnstile: 
             print("[INFO] 🛡️ 发现 Cloudflare Turnstile 人机验证框！")
-            
-            # 100%对齐：删除了 window.scrollTo 滚动，直接让 sb 依靠物理相对坐标进行精准碰撞
             sb.save_screenshot(shot("cf_detected_before_click"))
             
             print("[INFO] ⚡ 正在启动物理级 uc_gui_click_captcha() 穿透点击...")
@@ -117,7 +113,7 @@ def handle_privacy_modal(sb):
     except: 
         pass
 
-# --- 基于 JS 成功经验的登录流程 (焊死不变) ---
+# --- 基于 JS 成功经验的登录流程 (完全焊死不变) ---
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
@@ -170,7 +166,7 @@ def login(sb, user: str, pwd: str) -> bool:
             pass
         return False
 
-# --- 续期逻辑 (焊死不变) ---
+# --- 续期逻辑 (仅修正定位语法，其余结构完全焊死) ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -182,9 +178,11 @@ def renew_server(sb, sid: str) -> bool:
         # 获取旧时间状态
         old_val = sb.execute_script('return document.getElementById("lastRenewalTime")?.textContent.strip() || "";')
         
-        renew_selector = "button:has-text('Renew Server')"
+        # 【精准修正】100% 还原老脚本中的原生文本寻找语法
+        renew_selector = 'button:contains("Renew Server")'
+        
         if sb.is_element_visible(renew_selector):
-            print("[INFO] 成功捕获到 'Renew Server' 按钮，进行点击...")
+            print("[INFO] 🎯 成功捕获到真正的 'Renew Server' 按钮，进行点击！")
             sb.click(renew_selector)
         else:
             print("[WARN] 正常选择器不可见，尝试执行底层 A 标签跳转函数...")
