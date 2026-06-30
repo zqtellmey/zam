@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - 核心逻辑完美焊死 + 修复新版到期时间提取 JS 语法标准
+Zampto 自动续期脚本 - 核心逻辑完美焊死 + 彻底修复到期时间提取 JS 语法
 """
 
 import os
@@ -166,7 +166,7 @@ def login(sb, user: str, pwd: str) -> bool:
             pass
         return False
 
-# --- 续期逻辑 (仅修正时间提取函数的标准语法格式，核心业务及步骤全部焊死) ---
+# --- 续期逻辑 (登录、点击与CF处理完美焊死，仅安全修复提取时间的 JS 基础语法) ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -175,18 +175,20 @@ def renew_server(sb, sid: str) -> bool:
         
         handle_privacy_modal(sb)
         
-        # 修正为符合 Selenium 标准语法的立即执行匿名函数表达式
+        # 采用最平铺直叙、绝不报错的标准 JS 语法块进行匹配
         js_get_expiry = '''
-            return (() => {
-                var divs = document.querySelectorAll("div");
-                for (var i = 0; i < divs.length; i++) {
-                    if (divs[i].textContent.includes("Expiry (Next Renewal):")) {
-                        var span = divs[i].querySelector("span");
-                        if (span) return span.textContent.trim();
+            var result = "";
+            var divs = document.getElementsByTagName("div");
+            for (var i = 0; i < divs.length; i++) {
+                if (divs[i].textContent && divs[i].textContent.indexOf("Expiry (Next Renewal):") !== -1) {
+                    var span = divs[i].getElementsByTagName("span")[0];
+                    if (span) {
+                        result = span.textContent.trim();
+                        break;
                     }
                 }
-                return "";
-            })();
+            }
+            return result;
         '''
         
         # 获取续期前的时间状态
@@ -213,7 +215,7 @@ def renew_server(sb, sid: str) -> bool:
         new_val = sb.execute_script(js_get_expiry)
         expiry_time = new_val if new_val else "获取失败"
         
-        # 只要能提取到最新的过期文本时间，即视为成功
+        # 提取到最新的过期文本时间即视为任务通知里的成功完成
         is_ok = (new_val != "")
         
         status_msg = "续期成功" if is_ok else "状态未发生明显变动"
