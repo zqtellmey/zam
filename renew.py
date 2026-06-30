@@ -113,12 +113,12 @@ def run():
                 # 5. 等待操作框完成（根据要求等待 10 来秒）
                 print("已点击续期，等待 12 秒让操作框完成...")
                 page.wait_for_timeout(12000)
-                status_msg += "🎉 续期等待结束。"
+                status_msg += "🎉 zampto续期等待结束。"
             else:
-                status_msg += "❌ 未能在页面上找到 'Renew Server' 按钮，可能已处于续期状态或登录失效。"
+                status_msg += "❌ zampto未能在页面上找到 'Renew Server' 按钮，可能已处于续期状态或登录失效。"
 
         except Exception as e:
-            status_msg += f"💥 脚本运行发生异常: {str(e)}"
+            status_msg += f"💥 zampto脚本运行发生异常: {str(e)}"
             print(status_msg)
         finally:
             # 无论成功失败，保存最终截图
