@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - SeleniumBase 100%复刻老脚本CF过检+1080P高清横屏版
+Zampto 自动续期脚本 - SeleniumBase 100%全网页纵向滚屏截图+CF复刻版
 """
 
 import os
@@ -45,16 +45,16 @@ def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
 def is_linux(): 
     return platform.system().lower() == "linux"
 
-# --- 精准设置 1080P 高清虚拟桌面 ---
+# --- 设置标准虚拟桌面 ---
 def setup_display():
     if is_linux() and not os.environ.get("DISPLAY"):
         try:
             from pyvirtualdisplay import Display
-            # 升级为 1920x1080 高清横屏分辨率，确保网页元素完整展现，无遮挡
-            d = Display(visible=False, size=(1920, 1080))
+            # 保持 1280x1024 基础视窗，主要靠后面的 full=True 获取纵向全网页
+            d = Display(visible=False, size=(1280, 1024))
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
-            print("[INFO] 🖥️ Xvfb 虚拟 1080P 高清横屏桌面已成功启动 (1920x1080)")
+            print("[INFO] 🖥️ Xvfb 虚拟桌面已启动")
             return d
         except Exception as e:
             print(f"[ERROR] 虚拟显示启动失败: {e}")
@@ -77,47 +77,53 @@ def notify(ok: bool, stage: str, msg: str = "", img: str = None):
     except Exception as e: 
         print(f"[ERROR] 发送 TG 通知失败: {e}")
 
-# --- 【100% 老脚本核心复刻】过 CF Turnstile 物理点击机制 ---
+# --- 【100% 老脚本核心复刻】带滚动视窗对齐的 CF 过检机制 ---
 def handle_turnstile_exact_replica(sb) -> bool:
     try:
-        # 100% 复刻：老脚本在检测前会给予充足的缓冲时间让验证码完成初始化渲染
-        print("[INFO] ⏱️ 预留 5 秒等待 Cloudflare 拦截层稳定展现...")
+        print("[INFO] ⏱️ 预留 5 秒等待 Cloudflare 拦截层加载...")
         time.sleep(5)
         
-        # 100% 复刻：检查页面是否存在验证码响应框
+        # 检查页面是否存在验证码框
         has_turnstile = sb.execute_script('return document.querySelector("input[name=\'cf-turnstile-response\']") !== null')
         
         if has_turnstile: 
-            print("[INFO] 🛡️ 核心判定：确凿发现 Cloudflare Turnstile 人机验证框！")
-            sb.save_screenshot(shot("cf_detected_before_click"))
+            print("[INFO] 🛡️ 发现 Cloudflare Turnstile 人机验证框！")
+            
+            # 关键补充复刻：尝试将屏幕滚动到最下方或验证码组件所在区域，防止 GUI 物理点击因为超出视窗而点空
+            try:
+                sb.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+                time.sleep(1)
+            except:
+                pass
+                
+            sb.save_screenshot(shot("cf_detected_before_click"), full=True)
             
             print("[INFO] ⚡ 正在启动物理级 uc_gui_click_captcha() 穿透点击...")
-            # 100% 复刻：调用 SeleniumBase 最核心的底层 GUI 模拟鼠标物理撞击点击
             sb.uc_gui_click_captcha()
             
             print("[INFO] ⏳ 物理点击完成，等待 5 秒让状态同步...")
             time.sleep(5)
             return True
         else:
-            print("[INFO] 🟢 未检测到 CF 拦截框，直接通行。")
+            print("[INFO] 🟢 当前节点未检测到 CF 拦截框。")
             return True
     except Exception as e: 
         print(f"[WARN] 穿透 CF 验证时发生非致命异常: {e}")
         return False
 
-# --- 完美继承自 JS 版本的隐私窗消除逻辑 ---
+# --- 完美移植自 JS 版本的隐私窗消除逻辑 ---
 def handle_privacy_modal(sb):
     try:
         for selector in ["button.fc-cta-consent", "button[aria-label='Consent']", ".fc-consent-root button", "text=Accept All", "button:has-text('Accept')"]:
             if sb.is_element_visible(selector):
                 sb.click(selector)
-                print(f"[INFO] 成功点掉隐私遮挡弹窗: ${selector}")
+                print(f"[INFO] 成功点掉隐私遮挡弹窗: {selector}")
                 time.sleep(2)
                 break
     except: 
         pass
 
-# --- 基于 JS 成功经验并深度优化的登录流程 ---
+# --- 基于 JS 成功经验的登录流程 ---
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
@@ -146,7 +152,7 @@ def login(sb, user: str, pwd: str) -> bool:
         ''')
         time.sleep(2)
         
-        sb.save_screenshot(shot("before_login_click"))
+        sb.save_screenshot(shot("before_login_click"), full=True)
 
         print("[INFO] 正在触发登录提交...")
         sb.click("button[type='submit']")
@@ -164,10 +170,10 @@ def login(sb, user: str, pwd: str) -> bool:
         return "auth/login" not in current_url
     except Exception as e:
         print(f"[WARN] 登录环节发生异常: {e}")
-        sb.save_screenshot(shot("login_exception"))
+        sb.save_screenshot(shot("login_exception"), full=True)
         return False
 
-# --- 续期逻辑：点击并触发复刻的 CF 防御 ---
+# --- 续期逻辑 ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -187,14 +193,21 @@ def renew_server(sb, sid: str) -> bool:
             print("[WARN] 正常选择器不可见，尝试执行底层 A 标签跳转函数...")
             sb.execute_script(f'var link = document.querySelector(\'a[onclick*="handleServerRenewal"][onclick*="{sid}"]\'); if (link) link.click();')
             
-        # 100% 严谨复刻：点击 Renew 后立即交由复刻逻辑接管
-        print("[INFO] 🚀 已经触发续期点击，正在调度 100% 复刻的 CF 穿透机制...")
+        # 点击 Renew 后交由复刻逻辑处理（加入了屏幕滚动对齐）
+        print("[INFO] 🚀 已经触发续期点击，正在调度复刻的 CF 穿透机制...")
         handle_turnstile_exact_replica(sb)
         
-        print("[INFO] 二次处理完毕，正在重新加载页面刷新续期数据...")
+        print("[INFO] 处理完毕，正在重新加载页面刷新续期数据...")
         sb.open(SERVER_URL.format(sid))
         time.sleep(5)
         
+        # 强制滚动到最下面，确保最后一张图完美展示表格内容
+        try:
+            sb.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+            time.sleep(1)
+        except:
+            pass
+
         new_val = sb.execute_script('return document.getElementById("lastRenewalTime")?.textContent.strip() || "";')
         expiry_time = sb.execute_script('return document.getElementById("nextRenewalTime")?.textContent.strip() || "获取失败";')
         
@@ -203,8 +216,9 @@ def renew_server(sb, sid: str) -> bool:
         status_msg = "续期成功" if is_ok else "状态未发生明显变动"
         msg_detail = f"服务器 ID: `{sid}`\n有效剩余到期时间: `{expiry_time}`"
         
+        # 强制使用 full=True 进行竖向全网页长图截取
         final_shot = shot("renew_final_status")
-        sb.save_screenshot(final_shot)
+        sb.save_screenshot(final_shot, full=True)
         
         notify(is_ok, status_msg, msg_detail, final_shot)
         return is_ok
@@ -223,15 +237,14 @@ def main():
     display = setup_display()
 
     try:
-        # 启用 uc (Undetected Mode)，headed 模式配合高清虚拟桌面
+        # 启用 uc 模式
         opts = {"uc": True, "test": True, "locale": "zh", "headed": True, "timeout_multiplier": 0.5}
         if PROXY_SOCKS5: 
             opts["proxy"] = PROXY_SOCKS5
             print(f"[INFO] 代理通道已接入: {PROXY_SOCKS5}")
         
         with SB(**opts) as sb:
-            # 强制设定浏览器视窗大小为标准 1080P 高清，防止内容折叠或坐标错位
-            sb.driver.set_window_size(1920, 1080)
+            sb.driver.set_window_size(1280, 1024)
             sb.driver.set_page_load_timeout(40)
             
             if login(sb, EMAIL, PASSWORD):
@@ -245,7 +258,7 @@ def main():
         print(f"[FATAL] 全局中断异常: {e}")
         err_shot = shot("fatal_error")
         try:
-            sb.save_screenshot(err_shot)
+            sb.save_screenshot(err_shot, full=True)
         except:
             pass
         notify(False, "脚本中断", f"运行异常错误: {str(e)}", err_shot)
