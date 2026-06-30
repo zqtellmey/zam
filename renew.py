@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - 核心逻辑完美焊死 + 修复新版到期时间提取 JS 语法
+Zampto 自动续期脚本 - 核心逻辑完美焊死 + 修复新版到期时间提取 JS 语法标准
 """
 
 import os
@@ -166,7 +166,7 @@ def login(sb, user: str, pwd: str) -> bool:
             pass
         return False
 
-# --- 续期逻辑 (登录、点击与CF处理完美焊死，仅修复了提取时间的JS闭包语法错误) ---
+# --- 续期逻辑 (仅修正时间提取函数的标准语法格式，核心业务及步骤全部焊死) ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -175,7 +175,7 @@ def renew_server(sb, sid: str) -> bool:
         
         handle_privacy_modal(sb)
         
-        # 使用立即执行匿名函数解决 JavaScript 的全局 return 语法报错问题
+        # 修正为符合 Selenium 标准语法的立即执行匿名函数表达式
         js_get_expiry = '''
             return (() => {
                 var divs = document.querySelectorAll("div");
@@ -213,7 +213,7 @@ def renew_server(sb, sid: str) -> bool:
         new_val = sb.execute_script(js_get_expiry)
         expiry_time = new_val if new_val else "获取失败"
         
-        # 只要新时间不为空，或者新旧时间发生改变，即视为成功
+        # 只要能提取到最新的过期文本时间，即视为成功
         is_ok = (new_val != "")
         
         status_msg = "续期成功" if is_ok else "状态未发生明显变动"
