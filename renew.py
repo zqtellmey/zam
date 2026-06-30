@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - 核心逻辑完美焊死 + 彻底修复到期时间提取 JS 语法
+Zampto 自动续期脚本 - 按钮完全对齐老脚本 + 登录截图完全焊死版
 """
 
 import os
@@ -166,7 +166,7 @@ def login(sb, user: str, pwd: str) -> bool:
             pass
         return False
 
-# --- 续期逻辑 (登录、点击与CF处理完美焊死，仅安全修复提取时间的 JS 基础语法) ---
+# --- 续期逻辑 (仅修正定位语法，其余结构完全焊死) ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -175,26 +175,10 @@ def renew_server(sb, sid: str) -> bool:
         
         handle_privacy_modal(sb)
         
-        # 采用最平铺直叙、绝不报错的标准 JS 语法块进行匹配
-        js_get_expiry = '''
-            var result = "";
-            var divs = document.getElementsByTagName("div");
-            for (var i = 0; i < divs.length; i++) {
-                if (divs[i].textContent && divs[i].textContent.indexOf("Expiry (Next Renewal):") !== -1) {
-                    var span = divs[i].getElementsByTagName("span")[0];
-                    if (span) {
-                        result = span.textContent.trim();
-                        break;
-                    }
-                }
-            }
-            return result;
-        '''
+        # 获取旧时间状态
+        old_val = sb.execute_script('return document.getElementById("lastRenewalTime")?.textContent.strip() || "";')
         
-        # 获取续期前的时间状态
-        old_val = sb.execute_script(js_get_expiry)
-        print(f"[INFO] 续期前检测到的到期时间: {old_val if old_val else '未获取到'}")
-        
+        # 【精准修正】100% 还原老脚本中的原生文本寻找语法
         renew_selector = 'button:contains("Renew Server")'
         
         if sb.is_element_visible(renew_selector):
@@ -204,6 +188,7 @@ def renew_server(sb, sid: str) -> bool:
             print("[WARN] 正常选择器不可见，尝试执行底层 A 标签跳转函数...")
             sb.execute_script(f'var link = document.querySelector(\'a[onclick*="handleServerRenewal"][onclick*="{sid}"]\'); if (link) link.click();')
             
+        # 点击 Renew 后交由 100% 对齐的复刻逻辑处理
         print("[INFO] 🚀 已经触发续期点击，正在调度复刻的 CF 穿透机制...")
         handle_turnstile_exact_replica(sb)
         
@@ -211,12 +196,10 @@ def renew_server(sb, sid: str) -> bool:
         sb.open(SERVER_URL.format(sid))
         time.sleep(5)
 
-        # 重新获取续期后的时间状态
-        new_val = sb.execute_script(js_get_expiry)
-        expiry_time = new_val if new_val else "获取失败"
+        new_val = sb.execute_script('return document.getElementById("lastRenewalTime")?.textContent.strip() || "";')
+        expiry_time = sb.execute_script('return document.getElementById("nextRenewalTime")?.textContent.strip() || "获取失败";')
         
-        # 提取到最新的过期文本时间即视为任务通知里的成功完成
-        is_ok = (new_val != "")
+        is_ok = (new_val != old_val and new_val != "")
         
         status_msg = "续期成功" if is_ok else "状态未发生明显变动"
         msg_detail = f"服务器 ID: `{sid}`\n有效剩余到期时间: `{expiry_time}`"
@@ -241,12 +224,14 @@ def main():
     display = setup_display()
 
     try:
+        # 启用 uc 模式
         opts = {"uc": True, "test": True, "locale": "zh", "headed": True, "timeout_multiplier": 0.5}
         if PROXY_SOCKS5: 
             opts["proxy"] = PROXY_SOCKS5
             print(f"[INFO] 代理通道已接入: {PROXY_SOCKS5}")
         
         with SB(**opts) as sb:
+            # 维持纵向超长视窗 (1280x2400) 焊死不变
             sb.driver.set_window_size(1280, 2400)
             sb.driver.set_page_load_timeout(40)
             
