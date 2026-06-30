@@ -36,20 +36,21 @@ def run():
         print("错误: 未配置账号或密码环境变量！")
         return
 
-    status_msg = "🚀 Zampto 续期任务开始...\n"
+    # 在状态信息开头加入 [ZAMPTO] 标识
+    status_msg = "🏷️ [ZAMPTO] 续期任务开始...\n"
     screenshot_path = "result.png"
 
     with sync_playwright() as p:
         # 在 GitHub 环境中必须使用 headless=True
         browser = p.chromium.launch(headless=True)
-        # 模拟真实的浏览器环境，避免被识别为机器人
+        # 模拟真实的浏览器环境
         context = browser.new_context(
             viewport={'width': 1280, 'height': 800},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = context.new_page()
 
-        # 【去广告/拦截操作】拒绝常见的广告、追踪器域名，加快加载速度
+        # 【去广告/拦截操作】
         def block_ads(route):
             url = route.request.url
             ad_keywords = ["google-analytics", "doubleclick", "adservice", "analytics", "adsense"]
@@ -66,8 +67,6 @@ def run():
             page.goto("https://dash.zampto.net/auth/login", wait_until="networkidle")
             
             # 【处理欧洲 IP 隐私提示框】
-            # 常见的隐私合规弹窗通常带有 "Accept", "Allow", "Agree", "Consent" 或 "允许" 字样
-            # 这里采用强鲁棒性的文本模糊匹配，如果检测到则点击
             privacy_selectors = [
                 "text=Accept All", "text=Allow", "text=Agree", "text=Consent", 
                 "text=允许", "button:has-text('Accept')", "button:has-text('Allow')"
@@ -83,42 +82,52 @@ def run():
                 except:
                     continue
 
-            # 2. 登录操作 (使用 ID 定位，非常鲁棒)
+            # 2. 登录操作
             print("输入账号密码...")
             page.fill("#email", EMAIL)
             page.fill("#password", PASSWORD)
             
-            # Login 按钮定位：抛弃动态 XPATH，改用按钮类型、文本内容和特征类名组合定位
             login_btn = page.locator("button[type='submit']:has-text('Login')")
             login_btn.click()
             
-            # 等待登录跳转完成
             page.wait_for_load_state("networkidle")
             print("登录表单已提交。")
 
             # 3. 访问服务器管理页面
             print("正在访问服务器续期页面...")
             page.goto("https://dash.zampto.net/server?id=6932", wait_until="networkidle")
-            page.wait_for_timeout(3000) # 额外等待 3 秒确保内层异步组件加载
+            page.wait_for_timeout(3000)
 
             # 4. 寻找并点击 Renew 按钮
-            # 鲁棒性定位方案：通过按钮内的文本 'Renew Server' 配合元素类型进行绝对匹配
             renew_btn = page.locator("button:has-text('Renew Server')").first
 
             if renew_btn.is_visible(timeout=5000):
                 print("找到 Renew 按钮，准备点击...")
                 renew_btn.click()
-                status_msg += "✅ 成功触发 Renew 按钮。\n"
+                status_msg += "✅ [ZAMPTO] 成功触发 Renew 按钮。\n"
                 
-                # 5. 等待操作框完成（根据要求等待 10 来秒）
+                # 5. 等待操作框完成（根据要求等待 12 秒）
                 print("已点击续期，等待 12 秒让操作框完成...")
                 page.wait_for_timeout(12000)
-                status_msg += "🎉 zampto续期等待结束。"
+                
+                # 6. 检查续期后的有效时间
+                try:
+                    expiry_locator = page.locator("div:has-text('Expiry (Next Renewal):') >> span.font-medium")
+                    if expiry_locator.is_visible(timeout=5000):
+                        expiry_time = expiry_locator.inner_text().strip()
+                        status_msg += f"⏳ [ZAMPTO] 续期后有效时间: {expiry_time}\n"
+                        print(f"成功获取到有效时间: {expiry_time}")
+                    else:
+                        status_msg += "⚠️ [ZAMPTO] 未找到有效时间显示元素。\n"
+                except Exception as ex_time:
+                    status_msg += f"⚠️ [ZAMPTO] 获取有效时间失败: {str(ex_time)}\n"
+                
+                status_msg += "🎉 [ZAMPTO] 续期操作完成。"
             else:
-                status_msg += "❌ zampto未能在页面上找到 'Renew Server' 按钮，可能已处于续期状态或登录失效。"
+                status_msg += "❌ [ZAMPTO] 未能在页面上找到 'Renew Server' 按钮，可能已处于续期状态或登录失效。"
 
         except Exception as e:
-            status_msg += f"💥 zampto脚本运行发生异常: {str(e)}"
+            status_msg += f"💥 [ZAMPTO] 脚本运行发生异常: {str(e)}"
             print(status_msg)
         finally:
             # 无论成功失败，保存最终截图
