@@ -36,7 +36,6 @@ def run():
 
     status_msg = "🏷️ [ZAMPTO] 续期任务开始...\n"
     screenshot_path = "result.png"
-    is_success = False
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -45,17 +44,6 @@ def run():
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = context.new_page()
-
-        # 【去广告/拦截操作】
-        def block_ads(route):
-            url = route.request.url
-            ad_keywords = ["google-analytics", "doubleclick", "adservice", "analytics", "adsense"]
-            if any(kw in url for kw in ad_keywords):
-                route.abort()
-            else:
-                route.continue_()
-        
-        page.route("**/*", block_ads)
 
         try:
             # =================================================================
@@ -103,7 +91,6 @@ def run():
             print("等待登录结果...")
             page.wait_for_load_state("networkidle")
             
-            # 如果当前 URL 仍然包含 '/auth/login'，说明登录被拦截或失败了
             if "/auth/login" in page.url:
                 raise Exception("登录失败：表单提交后未能成功跳转，仍停留在登录页面。请检查账号密码、验证码或登录按钮点击是否生效。")
             
@@ -115,9 +102,8 @@ def run():
             # =================================================================
             print("正在跳转到服务器续期页面...")
             page.goto("https://dash.zampto.net/server?id=6932", wait_until="networkidle")
-            page.wait_for_timeout(4000) # 给内层组件充分的渲染时间
+            page.wait_for_timeout(4000)
 
-            # 【核心检查点】判断是否被踢回登录页，或者服务器页面加载失败
             if "/auth/login" in page.url:
                 raise Exception("登录态失效：访问服务器页面时被重新定向到了登录页。")
 
@@ -133,7 +119,6 @@ def run():
             renew_btn.click(force=True)
             status_msg += "✅ 成功触发 Renew 按钮，正在等待操作框完成...\n"
             
-            # 等待操作框完成（根据要求等待 12 秒）
             print("已点击续期，等待 12 秒让操作框完成...")
             page.wait_for_timeout(12000)
             
@@ -150,14 +135,11 @@ def run():
                 status_msg += f"⚠️ 获取有效时间失败: {str(ex_time)}\n"
             
             status_msg += "🎉 续期操作完成。"
-            is_success = True
 
         except Exception as e:
-            # 捕获任何一个阶段抛出的显式异常
             status_msg += f"❌ 脚本运行中断: {str(e)}"
             print(status_msg)
         finally:
-            # 无论成功还是中途失败，立刻截取当前最后一幕的现场画面
             try:
                 page.screenshot(path=screenshot_path, full_page=True)
                 print("当前现场截图已保存。")
@@ -168,7 +150,6 @@ def run():
             context.close()
             browser.close()
 
-    # 将最终的（带有错误阶段原因的）文本和错误现场截图发送到 TG
     send_telegram_notification(status_msg, screenshot_path)
 
 if __name__ == "__main__":
