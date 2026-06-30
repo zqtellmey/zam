@@ -41,9 +41,7 @@ def run():
     screenshot_path = "result.png"
 
     with sync_playwright() as p:
-        # 在 GitHub 环境中必须使用 headless=True
         browser = p.chromium.launch(headless=True)
-        # 模拟真实的浏览器环境
         context = browser.new_context(
             viewport={'width': 1280, 'height': 800},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -87,9 +85,29 @@ def run():
             page.fill("#email", EMAIL)
             page.fill("#password", PASSWORD)
             
-            login_btn = page.locator("button[type='submit']:has-text('Login')")
-            login_btn.click()
+            # 额外等待 1 秒，让页面完全反应过来
+            page.wait_for_timeout(1000)
             
+            # 强化版登录按钮点击逻辑
+            print("尝试点击登录按钮...")
+            # 策略 A：直接定位类型为 submit 且包含 Login 的按钮
+            login_btn = page.locator("button[type='submit']:has-text('Login')").first
+            
+            if not login_btn.is_visible():
+                # 策略 B 后备方案：纯粹按 type='submit' 寻找
+                login_btn = page.locator("button[type='submit']").first
+
+            # 显式等待按钮处于可用（非 disabled）状态，并模拟真实物理点击
+            login_btn.wait_for(state="visible", timeout=5000)
+            login_btn.click(force=True) 
+            
+            # 策略 C 兜底方案：如果点击没反应，在密码框直接敲击回车键提交表单
+            page.wait_for_timeout(1000)
+            if page.url.endswith("/auth/login"): 
+                print("点击可能未触发，尝试在密码框按下 Enter 键...")
+                page.press("#password", "Enter")
+
+            # 等待登录后的页面跳转完成
             page.wait_for_load_state("networkidle")
             print("登录表单已提交。")
 
