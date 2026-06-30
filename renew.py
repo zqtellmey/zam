@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - SeleniumBase 纵向超长窗体100%全景截图版
+Zampto 自动续期脚本 - 登录截图完美焊死 + 100%严格复刻CF逻辑版
 """
 
 import os
@@ -45,12 +45,11 @@ def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
 def is_linux(): 
     return platform.system().lower() == "linux"
 
-# --- 设置纵向超长虚拟桌面 (通过2400超高度将网页从头到尾一网打尽) ---
+# --- 设置纵向超长虚拟桌面 (焊死不变) ---
 def setup_display():
     if is_linux() and not os.environ.get("DISPLAY"):
         try:
             from pyvirtualdisplay import Display
-            # 将高度直接设定为 2400，让网页下方的所有续期信息天然地露出来
             d = Display(visible=False, size=(1280, 2400))
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
@@ -77,32 +76,27 @@ def notify(ok: bool, stage: str, msg: str = "", img: str = None):
     except Exception as e: 
         print(f"[ERROR] 发送 TG 通知失败: {e}")
 
-# --- 【100% 老脚本核心复刻】过 CF Turnstile 物理点击机制 ---
+# --- 【100% 严格复刻老脚本核心】CF 过检机制 ---
 def handle_turnstile_exact_replica(sb) -> bool:
     try:
         print("[INFO] ⏱️ 预留 5 秒等待 Cloudflare 拦截层加载...")
-        time.sleep(5)
+        # 100%对齐：换用原生 sb.sleep，让浏览器驱动状态在后台正确同步
+        sb.sleep(5)
         
-        # 检查页面是否存在验证码框
+        # 100%对齐：严格检查页面是否存在验证码输入框
         has_turnstile = sb.execute_script('return document.querySelector("input[name=\'cf-turnstile-response\']") !== null')
         
         if has_turnstile: 
             print("[INFO] 🛡️ 发现 Cloudflare Turnstile 人机验证框！")
             
-            # 由于窗体已经拉长到2400，我们直接对齐验证码可见区域
-            try:
-                sb.execute_script('window.scrollTo(0, document.body.scrollHeight);')
-                time.sleep(1)
-            except:
-                pass
-                
+            # 100%对齐：删除了 window.scrollTo 滚动，直接让 sb 依靠物理相对坐标进行精准碰撞
             sb.save_screenshot(shot("cf_detected_before_click"))
             
             print("[INFO] ⚡ 正在启动物理级 uc_gui_click_captcha() 穿透点击...")
             sb.uc_gui_click_captcha()
             
             print("[INFO] ⏳ 物理点击完成，等待 5 秒让状态同步...")
-            time.sleep(5)
+            sb.sleep(5)
             return True
         else:
             print("[INFO] 🟢 当前节点未检测到 CF 拦截框。")
@@ -111,7 +105,7 @@ def handle_turnstile_exact_replica(sb) -> bool:
         print(f"[WARN] 穿透 CF 验证时发生非致命异常: {e}")
         return False
 
-# --- 完美移植自 JS 版本的隐私窗消除逻辑 ---
+# --- 完美移植自 JS 版本的隐私窗消除逻辑 (焊死不变) ---
 def handle_privacy_modal(sb):
     try:
         for selector in ["button.fc-cta-consent", "button[aria-label='Consent']", ".fc-consent-root button", "text=Accept All", "button:has-text('Accept')"]:
@@ -123,7 +117,7 @@ def handle_privacy_modal(sb):
     except: 
         pass
 
-# --- 基于 JS 成功经验的登录流程（完全焊死） ---
+# --- 基于 JS 成功经验的登录流程 (焊死不变) ---
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
@@ -176,7 +170,7 @@ def login(sb, user: str, pwd: str) -> bool:
             pass
         return False
 
-# --- 续期逻辑（完全焊死） ---
+# --- 续期逻辑 (焊死不变) ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -196,7 +190,7 @@ def renew_server(sb, sid: str) -> bool:
             print("[WARN] 正常选择器不可见，尝试执行底层 A 标签跳转函数...")
             sb.execute_script(f'var link = document.querySelector(\'a[onclick*="handleServerRenewal"][onclick*="{sid}"]\'); if (link) link.click();')
             
-        # 点击 Renew 后交由复刻逻辑处理
+        # 点击 Renew 后交由 100% 对齐的复刻逻辑处理
         print("[INFO] 🚀 已经触发续期点击，正在调度复刻的 CF 穿透机制...")
         handle_turnstile_exact_replica(sb)
         
@@ -212,7 +206,6 @@ def renew_server(sb, sid: str) -> bool:
         status_msg = "续期成功" if is_ok else "状态未发生明显变动"
         msg_detail = f"服务器 ID: `{sid}`\n有效剩余到期时间: `{expiry_time}`"
         
-        # 使用安全的普通 save_screenshot（因为视窗高度已经拉到2400，能直接截到全网页画面）
         final_shot = shot("renew_final_status")
         sb.save_screenshot(final_shot)
         
@@ -240,7 +233,7 @@ def main():
             print(f"[INFO] 代理通道已接入: {PROXY_SOCKS5}")
         
         with SB(**opts) as sb:
-            # 浏览器视窗同步调高，达到无需任何滚动函数的物理长图效果
+            # 维持纵向超长视窗 (1280x2400) 焊死不变
             sb.driver.set_window_size(1280, 2400)
             sb.driver.set_page_load_timeout(40)
             
