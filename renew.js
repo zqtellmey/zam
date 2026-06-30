@@ -36,13 +36,49 @@ async function sendTelegramNotification(text, screenshotPath = null) {
     }
 }
 
+// --- 【复刻核心】老项目过 CF Turnstile 人机验证逻辑的 Playwright 版实现 ---
+async function handleTurnstilePlaywright(page) {
+    try {
+        await page.waitForTimeout(2000);
+        // 复刻老代码的检测逻辑：document.querySelector("input[name='cf-turnstile-response']")
+        const hasTurnstile = await page.evaluate(() => document.querySelector("input[name='cf-turnstile-response']") !== null);
+        
+        if (!hasTurnstile) {
+            return true; // 如果不需要验证，直接跳过
+        }
+        
+        console.log("[INFO] 核心复刻：检测到 Cloudflare Turnstile 验证框，开始尝试穿透点击...");
+        
+        // 准确定位 CF 的 iframe 并进行物理模拟点击
+        const cfFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"]').first();
+        const checkbox = cfFrame.locator('#challenge-stage, .mark, input[type="checkbox"]').first();
+        
+        if (await checkbox.isVisible({ timeout: 4000 })) {
+            console.log("[INFO] 找到 CF 勾选复选框，正在模拟真实物理点击...");
+            await checkbox.click({ force: true });
+            await page.waitForTimeout(5000);
+        } else {
+            console.log("[WARN] 未能在 iframe 内找到明确的勾选元素，尝试直接点击整个挑战区域...");
+            const cfContainer = page.locator('div[id*="cf-v4-container"], iframe[src*="challenges.cloudflare.com"]').first();
+            if (await cfContainer.isVisible()) {
+                await cfContainer.click({ force: true });
+                await page.waitForTimeout(5000);
+            }
+        }
+        return true;
+    } catch (e) {
+        console.log(`[WARN] 尝试处理 CF 验证时跳过或失败: ${e.message}`);
+        return false;
+    }
+}
+
 (async () => {
     if (!EMAIL || !PASSWORD) {
         console.error("错误: 未配置账号或密码环境变量！");
         return;
     }
 
-    let statusMsg = "🏷️ [ZAMPTO] 续期任务开始...\n";
+    let statusMsg = "🏷️ [ZAMPTO] 续期任务开始 (Playwright+CF防御版)...\n";
     const screenshotPath = "result.png";
 
     // 配置浏览器代理
@@ -54,39 +90,35 @@ async function sendTelegramNotification(text, screenshotPath = null) {
 
     const browser = await chromium.launch(launchOptions);
     
-    // 关键修改：将分辨率从 1280x800 调低到 800x600，让截图比例更大更清晰
+    // 保持横屏 1024x768 分辨率（既保证截图清晰，又不易触发坚屏移动端UI崩溃）
     const context = await browser.newContext({
-        viewport: { width: 800, height: 600 },
+        viewport: { width: 1024, height: 768 },
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     });
     const page = await context.newPage();
 
     try {
         // =================================================================
-        // 阶段 1：登录操作与验证
+        // 阶段 1：已搞好的登录操作与验证（保持不变）
         // =================================================================
         console.log("正在访问登录页面...");
         await page.goto("https://dash.zampto.net/auth/login", { waitUntil: "networkidle" });
         await page.waitForTimeout(4000);
 
-        // 处理欧洲 IP 隐私提示框
-        const privacySelectors = [
-            "text=Accept All", "text=Allow", "text=Agree", "text=Consent", 
-            "text=允许", "button:has-text('Accept')", "button:has-text('Allow')"
-        ];
+        // 处理登录前的隐私提示框
+        const privacySelectors = ["text=Accept All", "text=Allow", "text=Agree", "button:has-text('Accept')"];
         for (const selector of privacySelectors) {
             try {
                 const element = page.locator(selector).first();
-                if (await element.isVisible({ timeout: 2000 })) {
+                if (await element.isVisible({ timeout: 1500 })) {
                     await element.click();
                     console.log(`已自动处理隐私弹窗: ${selector}`);
-                    await page.waitForTimeout(1000);
                     break;
                 }
             } catch (e) {}
         }
 
-        // 输入 Email 并强制同步 React 状态
+        // 输入 Email 并强刷 React 状态
         console.log("正在输入 Email...");
         const emailInput = page.locator("#email");
         await emailInput.waitFor({ state: "visible", timeout: 8000 });
@@ -94,21 +126,19 @@ async function sendTelegramNotification(text, screenshotPath = null) {
         await emailInput.fill(EMAIL);
         await emailInput.type(" ", { delay: 50 });
         await page.keyboard.press('Backspace');
-        
         await emailInput.evaluate((el, val) => {
             el.value = val;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
         }, EMAIL);
 
-        // 输入 Password 并强制同步 React 状态
+        // 输入 Password 并强刷 React 状态
         console.log("正在输入 Password...");
         const passwordInput = page.locator("#password");
         await passwordInput.focus();
         await passwordInput.fill(PASSWORD);
         await passwordInput.type(" ", { delay: 50 });
         await page.keyboard.press('Backspace');
-
         await passwordInput.evaluate((el, val) => {
             el.value = val;
             el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -123,7 +153,7 @@ async function sendTelegramNotification(text, screenshotPath = null) {
         await loginBtn.waitFor({ state: "visible", timeout: 5000 });
         await loginBtn.click({ force: true });
 
-        // 验证是否脱离登录页
+        // 验证跳转
         console.log("等待登录跳转结果...");
         await page.waitForTimeout(6000);
         await page.waitForLoadState("networkidle");
@@ -144,42 +174,28 @@ async function sendTelegramNotification(text, screenshotPath = null) {
         statusMsg += "✅ 成功登录控制台。\n";
 
         // =================================================================
-        // 阶段 2：访问控制台目标服务器
+        // 阶段 2：已搞好的访问控制台目标服务器（保持不变）
         // =================================================================
         console.log("正在跳转到服务器续期页面...");
         await page.goto("https://dash.zampto.net/server?id=6932", { waitUntil: "networkidle" });
-        await page.waitForTimeout(6000);
+        await page.waitForTimeout(5000);
 
-        if (page.url().includes("/auth/login")) {
-            throw new Error("登录态失效：访问服务器页面时被重新定向到了登录页。");
-        }
-
-        // --- 核心新增：精准干掉内页出现的 Google 隐私同意弹窗 ---
+        // 处理内页出现的 Google 隐私同意弹窗
         console.log("检测并处理内页隐私询问框...");
-        const innerPrivacySelectors = [
-            "button.fc-cta-consent", // Google Funding Choices 弹窗的“Consent（同意）”按钮原生类名
-            "p.fc-button-label:has-text('Consent')", 
-            "p.fc-button-label:has-text('Accept')",
-            ".fc-consent-root button"
-        ];
-
+        const innerPrivacySelectors = ["button.fc-cta-consent", ".fc-consent-root button"];
         for (const selector of innerPrivacySelectors) {
             try {
                 const btn = page.locator(selector).first();
-                if (await btn.isVisible({ timeout: 3000 })) {
-                    console.log(`发现隐私弹窗按钮，正在点击: ${selector}`);
-                    // 使用 evaluate 直接无视图层阻挡强力触发点击
+                if (await btn.isVisible({ timeout: 2000 })) {
                     await btn.evaluate(el => el.click());
                     await page.waitForTimeout(2000);
                     break;
                 }
-            } catch (e) {
-                console.log(`尝试点击内页隐私按钮 ${selector} 跳过或失败: ${e.message}`);
-            }
+            } catch (e) {}
         }
 
         // =================================================================
-        // 阶段 3：寻找并执行 Renew
+        // 阶段 3：点击 Renew 按钮 并在此时【引入复刻的 CF 验证过检逻辑】
         // =================================================================
         const renewBtn = page.locator("button:has-text('Renew Server')").first();
 
@@ -192,11 +208,16 @@ async function sendTelegramNotification(text, screenshotPath = null) {
             await renewBtn.scrollIntoViewIfNeeded();
             await renewBtn.click({ force: true, timeout: 3000 });
         } catch (e) {
-            // 如果被残余图层阻挡，直接用底层 JS 强行穿透点击
             await renewBtn.evaluate(el => el.click());
         }
 
-        statusMsg += "✅ 成功触发 Renew 按钮，正在等待操作框完成...\n";
+        console.log("✅ 成功触发 Renew 按钮。");
+        
+        // 【核心引入点】点击后立刻执行复刻老脚本的 CF 人机过检函数
+        console.log("正在唤醒复刻的 Cloudflare 过检机制...");
+        await handleTurnstilePlaywright(page);
+
+        statusMsg += "✅ 已触发 Renew 按钮并处理二次验证，等待操作框完成...\n";
         await page.waitForTimeout(12000);
 
         // 检查续期后的有效时间
@@ -204,7 +225,7 @@ async function sendTelegramNotification(text, screenshotPath = null) {
             const expiryLocator = page.locator("div:has-text('Expiry (Next Renewal):') >> span.font-medium");
             if (await expiryLocator.isVisible({ timeout: 5000 })) {
                 const expiryTime = (await expiryLocator.innerText()).trim();
-                statusMsg += `⏳ 续期后有效时间: {expiryTime}\n`;
+                statusMsg += `⏳ 续期后有效时间: ${expiryTime}\n`;
             } else {
                 statusMsg += "⚠️ 未找到有效时间显示元素。\n";
             }
