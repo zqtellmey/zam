@@ -50,7 +50,7 @@ def setup_display():
     if is_linux() and not os.environ.get("DISPLAY"):
         try:
             from pyvirtualdisplay import Display
-            # 保持 1280x1024 基础视窗，主要靠后面的 full=True 获取纵向全网页
+            # 保持 1280x1024 基础视窗，主要靠后面的全网页截图获取纵向网页
             d = Display(visible=False, size=(1280, 1024))
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
@@ -96,7 +96,7 @@ def handle_turnstile_exact_replica(sb) -> bool:
             except:
                 pass
                 
-            sb.save_screenshot(shot("cf_detected_before_click"), full=True)
+            sb.save_page_screenshot(shot("cf_detected_before_click"))
             
             print("[INFO] ⚡ 正在启动物理级 uc_gui_click_captcha() 穿透点击...")
             sb.uc_gui_click_captcha()
@@ -123,7 +123,7 @@ def handle_privacy_modal(sb):
     except: 
         pass
 
-# --- 基于 JS 成功经验的登录流程 ---
+# --- 基于 JS 成功经验的登录流程（焊死不改） ---
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
@@ -152,7 +152,7 @@ def login(sb, user: str, pwd: str) -> bool:
         ''')
         time.sleep(2)
         
-        sb.save_screenshot(shot("before_login_click"), full=True)
+        sb.save_page_screenshot(shot("before_login_click"))
 
         print("[INFO] 正在触发登录提交...")
         sb.click("button[type='submit']")
@@ -170,10 +170,13 @@ def login(sb, user: str, pwd: str) -> bool:
         return "auth/login" not in current_url
     except Exception as e:
         print(f"[WARN] 登录环节发生异常: {e}")
-        sb.save_screenshot(shot("login_exception"), full=True)
+        try:
+            sb.save_page_screenshot(shot("login_exception"))
+        except:
+            pass
         return False
 
-# --- 续期逻辑 ---
+# --- 续期逻辑（焊死不改） ---
 def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
@@ -216,9 +219,9 @@ def renew_server(sb, sid: str) -> bool:
         status_msg = "续期成功" if is_ok else "状态未发生明显变动"
         msg_detail = f"服务器 ID: `{sid}`\n有效剩余到期时间: `{expiry_time}`"
         
-        # 强制使用 full=True 进行竖向全网页长图截取
+        # 使用 save_page_screenshot 进行全长屏网页截取
         final_shot = shot("renew_final_status")
-        sb.save_screenshot(final_shot, full=True)
+        sb.save_page_screenshot(final_shot)
         
         notify(is_ok, status_msg, msg_detail, final_shot)
         return is_ok
@@ -258,7 +261,7 @@ def main():
         print(f"[FATAL] 全局中断异常: {e}")
         err_shot = shot("fatal_error")
         try:
-            sb.save_screenshot(err_shot, full=True)
+            sb.save_page_screenshot(err_shot)
         except:
             pass
         notify(False, "脚本中断", f"运行异常错误: {str(e)}", err_shot)
