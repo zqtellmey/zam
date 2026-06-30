@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Zampto 自动续期脚本 - SeleniumBase 极速过 CF 横屏稳定版
+Zampto 自动续期脚本 - SeleniumBase 100%复刻老脚本CF过检+1080P高清横屏版
 """
 
 import os
@@ -45,15 +45,16 @@ def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
 def is_linux(): 
     return platform.system().lower() == "linux"
 
-# --- 精准设置虚拟桌面 (确保 1280x800 完美横屏截图) ---
+# --- 精准设置 1080P 高清虚拟桌面 ---
 def setup_display():
     if is_linux() and not os.environ.get("DISPLAY"):
         try:
             from pyvirtualdisplay import Display
-            d = Display(visible=False, size=(1280, 800))
+            # 升级为 1920x1080 高清横屏分辨率，确保网页元素完整展现，无遮挡
+            d = Display(visible=False, size=(1920, 1080))
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
-            print("[INFO] 🖥️ Xvfb 虚拟标准横屏桌面已成功启动 (1280x800)")
+            print("[INFO] 🖥️ Xvfb 虚拟 1080P 高清横屏桌面已成功启动 (1920x1080)")
             return d
         except Exception as e:
             print(f"[ERROR] 虚拟显示启动失败: {e}")
@@ -69,7 +70,6 @@ def notify(ok: bool, stage: str, msg: str = "", img: str = None):
         return
     try:
         text = f"🔔 Zampto: {'✅' if ok else '❌'} {stage}\n{msg}\n⏰ {cn_time_str()}"
-        # 修复之前误写的 $ 符号
         requests.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
         if img and Path(img).exists():
             with open(img, "rb") as f:
@@ -77,48 +77,57 @@ def notify(ok: bool, stage: str, msg: str = "", img: str = None):
     except Exception as e: 
         print(f"[ERROR] 发送 TG 通知失败: {e}")
 
-# --- 【核心复刻】调用 SeleniumBase UC 模式物理级过 CF Turnstile 逻辑 ---
-def handle_turnstile(sb) -> bool:
+# --- 【100% 老脚本核心复刻】过 CF Turnstile 物理点击机制 ---
+def handle_turnstile_exact_replica(sb) -> bool:
     try:
-        time.sleep(2)
-        # 检测页面是否存在 cf-turnstile 响应框
-        result = sb.execute_script('return document.querySelector("input[name=\'cf-turnstile-response\']") !== null')
-        if not result: 
-            return True
-        
-        print("[INFO] 🛡️ 发现 Cloudflare Turnstile 验证层，开始执行 GUI 级过检...")
-        sb.uc_gui_click_captcha()
+        # 100% 复刻：老脚本在检测前会给予充足的缓冲时间让验证码完成初始化渲染
+        print("[INFO] ⏱️ 预留 5 秒等待 Cloudflare 拦截层稳定展现...")
         time.sleep(5)
-        return True
+        
+        # 100% 复刻：检查页面是否存在验证码响应框
+        has_turnstile = sb.execute_script('return document.querySelector("input[name=\'cf-turnstile-response\']") !== null')
+        
+        if has_turnstile: 
+            print("[INFO] 🛡️ 核心判定：确凿发现 Cloudflare Turnstile 人机验证框！")
+            sb.save_screenshot(shot("cf_detected_before_click"))
+            
+            print("[INFO] ⚡ 正在启动物理级 uc_gui_click_captcha() 穿透点击...")
+            # 100% 复刻：调用 SeleniumBase 最核心的底层 GUI 模拟鼠标物理撞击点击
+            sb.uc_gui_click_captcha()
+            
+            print("[INFO] ⏳ 物理点击完成，等待 5 秒让状态同步...")
+            time.sleep(5)
+            return True
+        else:
+            print("[INFO] 🟢 未检测到 CF 拦截框，直接通行。")
+            return True
     except Exception as e: 
-        print(f"[WARN] 尝试通过 CF 验证时触发异常: {e}")
+        print(f"[WARN] 穿透 CF 验证时发生非致命异常: {e}")
         return False
 
-# --- 完美移植自 JS 版本的隐私窗消除逻辑 ---
+# --- 完美继承自 JS 版本的隐私窗消除逻辑 ---
 def handle_privacy_modal(sb):
     try:
         for selector in ["button.fc-cta-consent", "button[aria-label='Consent']", ".fc-consent-root button", "text=Accept All", "button:has-text('Accept')"]:
             if sb.is_element_visible(selector):
                 sb.click(selector)
-                print(f"[INFO] 成功点掉隐私遮挡弹窗: {selector}")
+                print(f"[INFO] 成功点掉隐私遮挡弹窗: ${selector}")
                 time.sleep(2)
                 break
     except: 
         pass
 
-# --- 完美对齐 JS 的登录逻辑 ---
+# --- 基于 JS 成功经验并深度优化的登录流程 ---
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
         sb.open(AUTH_URL)
         time.sleep(4)
         
-        # 处理可能的前置隐私弹窗
         handle_privacy_modal(sb)
         sb.wait_for_element_present("#email", timeout=10)
 
-        # 完全复刻 JS 里的行为：先高亮聚焦，再填充，最后追加输入刷 React 状态
-        print("[INFO] 输入账号并刷新 React 状态...")
+        print("[INFO] 输入账号并刷新表单状态...")
         sb.click("#email")
         sb.type("#email", user)
         sb.execute_script('''
@@ -127,7 +136,7 @@ def login(sb, user: str, pwd: str) -> bool:
             emailInput.dispatchEvent(new Event("change", { bubbles: true }));
         ''')
         
-        print("[INFO] 输入密码并刷新 React 状态...")
+        print("[INFO] 输入密码并刷新表单状态...")
         sb.click("#password")
         sb.type("#password", pwd)
         sb.execute_script('''
@@ -139,14 +148,10 @@ def login(sb, user: str, pwd: str) -> bool:
         
         sb.save_screenshot(shot("before_login_click"))
 
-        # 提交登录
         print("[INFO] 正在触发登录提交...")
         sb.click("button[type='submit']")
-        
-        # 等待跳转结果
         time.sleep(6)
         
-        # 兜底：如果还停留在登录页，执行 JS 中敲击 Enter 提交的逻辑
         current_url = sb.get_current_url()
         if "auth/login" in current_url:
             print("[INFO] 仍停留在登录页，尝试在密码框模拟 Enter 键直接提交...")
@@ -182,15 +187,13 @@ def renew_server(sb, sid: str) -> bool:
             print("[WARN] 正常选择器不可见，尝试执行底层 A 标签跳转函数...")
             sb.execute_script(f'var link = document.querySelector(\'a[onclick*="handleServerRenewal"][onclick*="{sid}"]\'); if (link) link.click();')
             
-        # 核心：一点击续期，立即调用 SeleniumBase 特有的过 CF GUI 方案进行处理
-        print("[INFO] 触发续期点击，开始接管可能被拦截的二次 CF 验证...")
-        time.sleep(2)
-        handle_turnstile(sb)
-        time.sleep(10)
+        # 100% 严谨复刻：点击 Renew 后立即交由复刻逻辑接管
+        print("[INFO] 🚀 已经触发续期点击，正在调度 100% 复刻的 CF 穿透机制...")
+        handle_turnstile_exact_replica(sb)
         
-        # 重新刷新当前页面来捞取最新的到期数据
+        print("[INFO] 二次处理完毕，正在重新加载页面刷新续期数据...")
         sb.open(SERVER_URL.format(sid))
-        time.sleep(4)
+        time.sleep(5)
         
         new_val = sb.execute_script('return document.getElementById("lastRenewalTime")?.textContent.strip() || "";')
         expiry_time = sb.execute_script('return document.getElementById("nextRenewalTime")?.textContent.strip() || "获取失败";')
@@ -220,16 +223,16 @@ def main():
     display = setup_display()
 
     try:
-        # 启用 uc (Undetected Mode)，headed 模式配合虚拟横屏桌面
+        # 启用 uc (Undetected Mode)，headed 模式配合高清虚拟桌面
         opts = {"uc": True, "test": True, "locale": "zh", "headed": True, "timeout_multiplier": 0.5}
         if PROXY_SOCKS5: 
             opts["proxy"] = PROXY_SOCKS5
             print(f"[INFO] 代理通道已接入: {PROXY_SOCKS5}")
         
         with SB(**opts) as sb:
-            # 强制设定浏览器视窗大小，确保导出的图片是完美横屏
-            sb.driver.set_window_size(1280, 800)
-            sb.driver.set_page_load_timeout(30)
+            # 强制设定浏览器视窗大小为标准 1080P 高清，防止内容折叠或坐标错位
+            sb.driver.set_window_size(1920, 1080)
+            sb.driver.set_page_load_timeout(40)
             
             if login(sb, EMAIL, PASSWORD):
                 print("✅ 成功突围至后台。")
