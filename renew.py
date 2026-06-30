@@ -45,15 +45,13 @@ def run():
         )
         page = context.new_page()
 
-        # 【不做任何广告过滤和隐藏拦截】完全维持原生态页面，规避反广告拦截检测
-
         try:
             # =================================================================
             # 阶段 1：登录操作与验证
             # =================================================================
             print("正在访问登录页面...")
             page.goto("https://dash.zampto.net/auth/login", wait_until="networkidle")
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
 
             # 处理欧洲 IP 隐私提示框
             privacy_selectors = [
@@ -71,15 +69,28 @@ def run():
                 except:
                     continue
 
-            print("输入账号密码...")
-            # 聚焦并输入（通过原生 focus 避免被浮层打断焦点）
-            page.locator("#email").focus()
-            page.fill("#email", EMAIL)
+            # --- 物理仿真输入 Email ---
+            print("正在物理仿真输入 Email...")
+            email_input = page.locator("#email")
+            email_input.wait_for(state="visible", timeout=5000)
             
-            page.locator("#password").focus()
-            page.fill("#password", PASSWORD)
+            # 先点击，再全选并清除已有内容（如果有的话）
+            email_input.click(force=True)
+            page.evaluate("document.getElementById('email').value = ''")
+            # 模拟真人键盘输入，每个字符间隔 50 毫秒，强制触发前端组件的 onChange 监听器
+            email_input.press_sequentially(EMAIL, delay=50)
+            
+            # --- 物理仿真输入 Password ---
+            print("正在物理仿真输入 Password...")
+            password_input = page.locator("#password")
+            
+            password_input.click(force=True)
+            page.evaluate("document.getElementById('password').value = ''")
+            password_input.press_sequentially(PASSWORD, delay=50)
+            
             page.wait_for_timeout(1000)
             
+            # --- 提交登录 ---
             print("尝试点击登录按钮...")
             login_btn = page.locator("button[type='submit']:has-text('Login')").first
             if not login_btn.is_visible():
@@ -87,9 +98,7 @@ def run():
 
             login_btn.wait_for(state="visible", timeout=5000)
             
-            # 关键改进：使用 element.click(force=True) 会在内部尝试绕过遮挡直接分发事件。
-            # 如果依然失败，则使用 evaluate 直接通过页面底层执行 JS 的 HTMLElement.click() 触发点击，
-            # 这种方式属于引擎级行为，不需要考虑任何视觉遮挡或焦点问题！
+            # 使用穿透点击
             try:
                 login_btn.click(force=True, timeout=3000)
             except Exception:
@@ -105,7 +114,7 @@ def run():
             # 【核心检查点】等待并判断是否成功脱离登录页
             print("等待登录结果...")
             page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
             
             if "/auth/login" in page.url:
                 raise Exception("登录失败：表单提交后未能成功跳转，仍停留在登录页面。请检查账号密码、验证码。")
@@ -118,7 +127,7 @@ def run():
             # =================================================================
             print("正在跳转到服务器续期页面...")
             page.goto("https://dash.zampto.net/server?id=6932", wait_until="networkidle")
-            page.wait_for_timeout(5000) # 保持广告完整渲染所需时间
+            page.wait_for_timeout(5000)
 
             if "/auth/login" in page.url:
                 raise Exception("登录态失效：访问服务器页面时被重新定向到了登录页。")
@@ -132,9 +141,8 @@ def run():
                 raise Exception("未找到续期按钮：页面加载成功，但未能在当前页面上找到 'Renew Server' 按钮。可能已经处于续期最大时限，或页面结构发生变化。")
                 
             print("找到 Renew 按钮，准备点击...")
-            # 同样对续期按钮使用防遮挡的双重点击策略
             try:
-                renew_btn.scroll_into_view_if_needed() # 先尝试滚动使其展露
+                renew_btn.scroll_into_view_if_needed()
                 renew_btn.click(force=True, timeout=3000)
             except Exception:
                 print("续期按钮可能被广告遮挡，使用底层 JS 强行激活点击...")
