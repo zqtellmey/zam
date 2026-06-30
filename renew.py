@@ -50,7 +50,6 @@ def setup_display():
     if is_linux() and not os.environ.get("DISPLAY"):
         try:
             from pyvirtualdisplay import Display
-            # 强制指定标准 1280x800 分辨率，确保截图不再是竖屏、窄图
             d = Display(visible=False, size=(1280, 800))
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
@@ -69,7 +68,7 @@ def notify(ok: bool, stage: str, msg: str = "", img: str = None):
         return
     try:
         text = f"🔔 Zampto: {'✅' if ok else '❌'} {stage}\n{msg}\n⏰ {cn_time_str()}"
-        requests.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
+        requests.post(f"https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
         if img and Path(img).exists():
             with open(img, "rb") as f:
                 requests.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendPhoto", data={"chat_id": TG_CHAT_ID}, files={"photo": f}, timeout=15)
@@ -93,10 +92,10 @@ def handle_turnstile(sb) -> bool:
         print(f"[WARN] 尝试通过 CF 验证时触发异常: {e}")
         return False
 
-# --- 完美继承自 JS 版本的隐私窗消除逻辑 ---
+# --- 完美移植自 JS 版本的隐私窗消除逻辑 ---
 def handle_privacy_modal(sb):
     try:
-        for selector in ["button.fc-cta-consent", "button[aria-label='Consent']", ".fc-consent-root button", "text=Accept All"]:
+        for selector in ["button.fc-cta-consent", "button[aria-label='Consent']", ".fc-consent-root button", "text=Accept All", "button:has-text('Accept')"]:
             if sb.is_element_visible(selector):
                 sb.click(selector)
                 print(f"[INFO] 成功点掉隐私遮挡弹窗: {selector}")
@@ -105,40 +104,55 @@ def handle_privacy_modal(sb):
     except: 
         pass
 
-# --- 完美继承自 JS 版本的登录及虚拟 DOM 强刷逻辑 ---
+# --- 完美对齐 JS 的登录逻辑 ---
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
-        sb.uc_open_with_reconnect(AUTH_URL, reconnect_time=5.0)
-        time.sleep(3)
+        # 直接使用我们在 JS 中成功跑通的打开方式
+        sb.open(AUTH_URL)
+        time.sleep(4)
         
-        # 处理登录前的前置验证
-        handle_turnstile(sb)
-        sb.wait_for_element_present("#email", timeout=10)
+        # 处理可能的前置隐私弹窗
         handle_privacy_modal(sb)
+        sb.wait_for_element_present("#email", timeout=10)
 
-        # 核心：将刚才 JS 版证实最有效的 dispatchEvent 强刷策略迁移到 Python 中执行，攻破 Next.js 表单断开机制
-        print("[INFO] 输入账号并触发事件气泡冒泡...")
-        sb.execute_script(f'document.getElementById("email").value = "{user}"')
-        sb.execute_script('document.getElementById("email").dispatchEvent(new Event("input", { bubbles: true }))')
-        sb.execute_script('document.getElementById("email").dispatchEvent(new Event("change", { bubbles: true }))')
+        # 【核心对齐】完全复刻 JS 版本对 React 表单强刷状态的赋值逻辑
+        print("[INFO] 强刷输入账号并触发事件气泡冒泡...")
+        sb.execute_script(f'''
+            var emailInput = document.getElementById("email");
+            emailInput.value = "{user}";
+            emailInput.dispatchEvent(new Event("input", {{ bubbles: true }}));
+            emailInput.dispatchEvent(new Event("change", {{ bubbles: true }}));
+        ''')
         
-        print("[INFO] 输入密码并触发事件气泡冒泡...")
-        sb.execute_script(f'document.getElementById("password").value = "{pwd}"')
-        sb.execute_script('document.getElementById("password").dispatchEvent(new Event("input", { bubbles: true }))')
-        sb.execute_script('document.getElementById("password").dispatchEvent(new Event("change", { bubbles: true }))')
-        time.sleep(1.5)
-        
-        # 提交登录
-        sb.click("button[type='submit']")
-        time.sleep(6)
-        
-        # 处理提交表单后的可能存在的 CF 二次验证
-        handle_turnstile(sb)
+        print("[INFO] 强刷输入密码并触发事件气泡冒泡...")
+        sb.execute_script(f'''
+            var pwdInput = document.getElementById("password");
+            pwdInput.value = "{pwd}";
+            pwdInput.dispatchEvent(new Event("input", {{ bubbles: true }}));
+            pwdInput.dispatchEvent(new Event("change", {{ bubbles: true }}));
+        ''')
         time.sleep(2)
         
-        # 判断是否成功脱离登录地址
-        return "auth/login" not in sb.get_current_url()
+        sb.save_screenshot(shot("before_login_click"))
+
+        # 提交登录
+        print("[INFO] 正在触发登录提交...")
+        sb.click("button[type='submit']")
+        
+        # 等待跳转结果
+        time.sleep(6)
+        
+        # 兜底：如果还停留在登录页，执行 JS 中敲击 Enter 提交的逻辑
+        current_url = sb.get_current_url()
+        if "auth/login" in current_url:
+            print("[INFO] 仍停留在登录页，尝试在密码框模拟 Enter 键直接提交...")
+            sb.send_keys("#password", "\n")
+            time.sleep(6)
+            current_url = sb.get_current_url()
+        
+        print(f"[INFO] 登录判定完成，当前 URL: {current_url}")
+        return "auth/login" not in current_url
     except Exception as e:
         print(f"[WARN] 登录环节发生异常: {e}")
         sb.save_screenshot(shot("login_exception"))
@@ -149,7 +163,7 @@ def renew_server(sb, sid: str) -> bool:
     try:
         print(f"[INFO] 正在访问服务器续期中心 ID: {sid}...")
         sb.open(SERVER_URL.format(sid))
-        time.sleep(4)
+        time.sleep(5)
         
         handle_privacy_modal(sb)
         
@@ -168,7 +182,7 @@ def renew_server(sb, sid: str) -> bool:
         print("[INFO] 触发续期点击，开始接管可能被拦截的二次 CF 验证...")
         time.sleep(2)
         handle_turnstile(sb)
-        time.sleep(8)
+        time.sleep(10)
         
         # 重新刷新当前页面来捞取最新的到期数据
         sb.open(SERVER_URL.format(sid))
@@ -192,7 +206,6 @@ def renew_server(sb, sid: str) -> bool:
         return False
 
 def main():
-    # 设定 400 秒看门狗强退，防止在 Actions 挂死
     dog = threading.Thread(target=watchdog, args=(400,), daemon=True)
     dog.start()
 
@@ -223,7 +236,12 @@ def main():
 
     except Exception as e:
         print(f"[FATAL] 全局中断异常: {e}")
-        notify(False, "脚本中断", f"运行异常错误: {str(e)}", shot("fatal_error"))
+        err_shot = shot("fatal_error")
+        try:
+            sb.save_screenshot(err_shot)
+        except:
+            pass
+        notify(False, "脚本中断", f"运行异常错误: {str(e)}", err_shot)
     finally:
         if display: 
             display.stop()
