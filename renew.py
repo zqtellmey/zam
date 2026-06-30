@@ -65,15 +65,17 @@ def shot(name: str) -> str:
 
 def notify(ok: bool, stage: str, msg: str = "", img: str = None):
     if not TG_BOT_TOKEN or not TG_CHAT_ID: 
+        print("[WARN] TG 配置缺失，跳过通知。")
         return
     try:
         text = f"🔔 Zampto: {'✅' if ok else '❌'} {stage}\n{msg}\n⏰ {cn_time_str()}"
-        requests.post(f"https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
+        # 修复之前误写的 $ 符号
+        requests.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage", json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
         if img and Path(img).exists():
             with open(img, "rb") as f:
                 requests.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendPhoto", data={"chat_id": TG_CHAT_ID}, files={"photo": f}, timeout=15)
-    except: 
-        pass
+    except Exception as e: 
+        print(f"[ERROR] 发送 TG 通知失败: {e}")
 
 # --- 【核心复刻】调用 SeleniumBase UC 模式物理级过 CF Turnstile 逻辑 ---
 def handle_turnstile(sb) -> bool:
@@ -108,7 +110,6 @@ def handle_privacy_modal(sb):
 def login(sb, user: str, pwd: str) -> bool:
     print(f"[INFO] 正在建立安全连接进入登录页面...")
     try:
-        # 直接使用我们在 JS 中成功跑通的打开方式
         sb.open(AUTH_URL)
         time.sleep(4)
         
@@ -116,21 +117,23 @@ def login(sb, user: str, pwd: str) -> bool:
         handle_privacy_modal(sb)
         sb.wait_for_element_present("#email", timeout=10)
 
-        # 【核心对齐】完全复刻 JS 版本对 React 表单强刷状态的赋值逻辑
-        print("[INFO] 强刷输入账号并触发事件气泡冒泡...")
-        sb.execute_script(f'''
+        # 完全复刻 JS 里的行为：先高亮聚焦，再填充，最后追加输入刷 React 状态
+        print("[INFO] 输入账号并刷新 React 状态...")
+        sb.click("#email")
+        sb.type("#email", user)
+        sb.execute_script('''
             var emailInput = document.getElementById("email");
-            emailInput.value = "{user}";
-            emailInput.dispatchEvent(new Event("input", {{ bubbles: true }}));
-            emailInput.dispatchEvent(new Event("change", {{ bubbles: true }}));
+            emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+            emailInput.dispatchEvent(new Event("change", { bubbles: true }));
         ''')
         
-        print("[INFO] 强刷输入密码并触发事件气泡冒泡...")
-        sb.execute_script(f'''
+        print("[INFO] 输入密码并刷新 React 状态...")
+        sb.click("#password")
+        sb.type("#password", pwd)
+        sb.execute_script('''
             var pwdInput = document.getElementById("password");
-            pwdInput.value = "{pwd}";
-            pwdInput.dispatchEvent(new Event("input", {{ bubbles: true }}));
-            pwdInput.dispatchEvent(new Event("change", {{ bubbles: true }}));
+            pwdInput.dispatchEvent(new Event("input", { bubbles: true }));
+            pwdInput.dispatchEvent(new Event("change", { bubbles: true }));
         ''')
         time.sleep(2)
         
@@ -147,6 +150,7 @@ def login(sb, user: str, pwd: str) -> bool:
         current_url = sb.get_current_url()
         if "auth/login" in current_url:
             print("[INFO] 仍停留在登录页，尝试在密码框模拟 Enter 键直接提交...")
+            sb.click("#password")
             sb.send_keys("#password", "\n")
             time.sleep(6)
             current_url = sb.get_current_url()
