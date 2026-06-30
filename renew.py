@@ -69,27 +69,41 @@ def run():
                 except:
                     continue
 
-            # --- 物理仿真输入 Email ---
-            print("正在物理仿真输入 Email...")
+            # --- 核心改进：使用引擎级 JavaScript 注入和事件触发 ---
+            print("通过底层 JS 强行注入 Email 并激活前端状态监听...")
             email_input = page.locator("#email")
-            email_input.wait_for(state="visible", timeout=5000)
+            email_input.wait_for(state="attached", timeout=5000)
             
-            # 先点击，再全选并清除已有内容（如果有的话）
-            email_input.click(force=True)
-            page.evaluate("document.getElementById('email').value = ''")
-            # 模拟真人键盘输入，每个字符间隔 50 毫秒，强制触发前端组件的 onChange 监听器
-            email_input.press_sequentially(EMAIL, delay=50)
-            
-            # --- 物理仿真输入 Password ---
-            print("正在物理仿真输入 Password...")
+            # 使用 evaluate 强行改写 value，并依次向网页派发 input 和 change 事件，让 React/Vue 强制同步状态
+            page.evaluate(f"""
+                const el = document.getElementById('email');
+                if (el) {{
+                    el.value = "{EMAIL}";
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+            """)
+
+            print("通过底层 JS 强行注入 Password 并激活前端状态监听...")
             password_input = page.locator("#password")
+            password_input.wait_for(state="attached", timeout=5000)
             
-            password_input.click(force=True)
-            page.evaluate("document.getElementById('password').value = ''")
-            password_input.press_sequentially(PASSWORD, delay=50)
+            page.evaluate(f"""
+                const el = document.getElementById('password');
+                if (el) {{
+                    el.value = "{PASSWORD}";
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+            """)
             
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(1500)
             
+            # 验证输入结果
+            inserted_email = email_input.input_value()
+            inserted_password = password_input.input_value()
+            print(f"🔍 [状态校验] Email 长度: {len(inserted_email)}, Password 长度: {len(inserted_password)}")
+
             # --- 提交登录 ---
             print("尝试点击登录按钮...")
             login_btn = page.locator("button[type='submit']:has-text('Login')").first
@@ -114,10 +128,10 @@ def run():
             # 【核心检查点】等待并判断是否成功脱离登录页
             print("等待登录结果...")
             page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(4000)
             
             if "/auth/login" in page.url:
-                raise Exception("登录失败：表单提交后未能成功跳转，仍停留在登录页面。请检查账号密码、验证码。")
+                raise Exception("登录失败：表单提交后未能成功跳转，仍停留在登录页面。请检查账号密码。")
             
             print("✅ 登录成功，成功通过第一阶段。")
             status_msg += "✅ 成功登录控制台。\n"
@@ -138,19 +152,16 @@ def run():
             renew_btn = page.locator("button:has-text('Renew Server')").first
 
             if not renew_btn.is_visible(timeout=5000):
-                raise Exception("未找到续期按钮：页面加载成功，但未能在当前页面上找到 'Renew Server' 按钮。可能已经处于续期最大时限，或页面结构发生变化。")
+                raise Exception("未找到续期按钮：页面加载成功，但未能在当前页面上找到 'Renew Server' 按钮。")
                 
             print("找到 Renew 按钮，准备点击...")
             try:
                 renew_btn.scroll_into_view_if_needed()
                 renew_btn.click(force=True, timeout=3000)
             except Exception:
-                print("续期按钮可能被广告遮挡，使用底层 JS 强行激活点击...")
                 renew_btn.evaluate("element => element.click()")
 
             status_msg += "✅ 成功触发 Renew 按钮，正在等待操作框完成...\n"
-            
-            print("已点击续期，等待 12 秒让操作框完成...")
             page.wait_for_timeout(12000)
             
             # 检查续期后的有效时间
@@ -159,9 +170,8 @@ def run():
                 if expiry_locator.is_visible(timeout=5000):
                     expiry_time = expiry_locator.inner_text().strip()
                     status_msg += f"⏳ 续期后有效时间: {expiry_time}\n"
-                    print(f"成功获取到有效时间: {expiry_time}")
                 else:
-                    status_msg += "⚠️ 未找到有效时间显示元素（可能续期动作未产生界面刷新）。\n"
+                    status_msg += "⚠️ 未找到有效时间显示元素。\n"
             except Exception as ex_time:
                 status_msg += f"⚠️ 获取有效时间失败: {str(ex_time)}\n"
             
