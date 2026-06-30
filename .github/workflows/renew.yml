@@ -25,6 +25,15 @@ jobs:
         pip install playwright requests
         playwright install chromium --with-deps
 
+    - name: 安装并启动代理 (全自动适配内核)
+      env:
+          PROXY_NODE: ${{ secrets.PROXY_NODE }}
+        run: |
+          if [ -z "$PROXY_NODE" ]; then
+            echo "[INFO] 未配置代理，尝试直连模式..."
+            exit 0
+          fi
+          
           # 1. 下载并安装最新的 Sing-box 核心
           TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
           VERSION=${TAG#v}
