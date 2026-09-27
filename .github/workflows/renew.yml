@@ -1,4 +1,4 @@
-name: Zampto Auto Renew
+name: Zam Auto Renew
 
 on:
   schedule:
