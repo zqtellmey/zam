@@ -36,9 +36,19 @@ jobs:
           exit 0
         fi
 
-        # 1. 下载并安装最新的 Xray 核心
-        TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        wget -q "https://github.com/XTLS/Xray-core/releases/download/${TAG}/Xray-linux-64.zip"
+        # 1. 下载并安装 Xray 核心 (带 API 限流容错防护)
+        TAG=$(curl -s --max-time 10 https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        if [ -z "$TAG" ]; then
+          echo "[WARN] 获取最新版本失败（可能触发 GitHub API 限流），正在重试重定向解析..."
+          TAG=$(curl -sI https://github.com/XTLS/Xray-core/releases/latest | grep -i "^location:" | sed -E 's/.*tag\/(.*)/\1/' | tr -d '\r\n')
+        fi
+        if [ -z "$TAG" ]; then
+          echo "[WARN] 解析失败，使用保底稳定版本 v24.11.30"
+          TAG="v24.11.30"
+        fi
+
+        echo "[INFO] 使用 Xray 版本: ${TAG}"
+        wget -q "https://github.com/XTLS/Xray-core/releases/download/${TAG}/Xray-linux-64.zip" || { echo "[ERROR] Xray 下载失败"; exit 1; }
         unzip -q Xray-linux-64.zip
         chmod +x xray
 
@@ -59,7 +69,7 @@ jobs:
         path = unquote(params.get("path", "/"))
         host = params.get("host", sni)
 
-        # 动态读取链接中的跳过证书校验设置（如 allowInsecure=1 或 insecure=1）
+        # 动态读取链接中的跳过证书校验设置
         insecure_param = params.get("allowInsecure", params.get("insecure", "")).lower()
         allow_insecure = insecure_param in ["1", "true", "yes"]
 
@@ -117,8 +127,6 @@ jobs:
           cat proxy.log
           exit 1
         fi
-
- 
 
     - name: 初始化 SeleniumBase 浏览器核心
       run: seleniumbase install chromedriver
