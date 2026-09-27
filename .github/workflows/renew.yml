@@ -49,7 +49,9 @@ jobs:
 
         echo "[INFO] 使用 Xray 版本: ${TAG}"
         wget -q "https://github.com/XTLS/Xray-core/releases/download/${TAG}/Xray-linux-64.zip" || { echo "[ERROR] Xray 下载失败"; exit 1; }
-        unzip -q Xray-linux-64.zip
+        
+        # 加 -o 参数强制覆盖，避免同名文件 (如 README.md) 导致交互卡死
+        unzip -o -q Xray-linux-64.zip
         chmod +x xray
 
         # 2. 解析 VLESS+XHTTP 节点并生成 config.json
