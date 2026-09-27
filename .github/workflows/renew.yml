@@ -27,7 +27,7 @@ jobs:
       run: |
         pip install seleniumbase requests pyvirtualdisplay
 
-    - name: 安装并启动代理 (全自动适配内核)
+    - name: 安装并启动代理 (Xray VLESS+XHTTP TLS)
       env:
         PROXY_NODE: ${{ secrets.PROXY_NODE }}
       run: |
@@ -36,29 +36,14 @@ jobs:
           exit 0
         fi
 
-        # 检查节点协议与传输层类型
-        python3 -c '
-        import os, urllib.parse
-        url = os.environ.get("PROXY_NODE", "")
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-        ttype = qs.get("type", [""])[0].lower()
-        if ttype in ["xhttp", "splithttp", "httpupgrade"]:
-            print("XRAY")
-        else:
-            print("SINGBOX")
-        ' > /tmp/core_choice
+        # 1. 下载并安装最新的 Xray 核心
+        TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        wget -q "https://github.com/XTLS/Xray-core/releases/download/${TAG}/Xray-linux-64.zip"
+        unzip -q Xray-linux-64.zip
+        chmod +x xray
 
-        CORE_TYPE=$(cat /tmp/core_choice)
-
-        if [ "$CORE_TYPE" = "XRAY" ]; then
-            echo "[INFO] 检测到 XHTTP 传输，自动切换至 Xray 核心..."
-            TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-            wget -q "https://github.com/XTLS/Xray-core/releases/download/${TAG}/Xray-linux-64.zip"
-            unzip -q Xray-linux-64.zip
-            chmod +x xray
-            
-            # 生成 Xray 配置
-            python3 << 'PYEOF'
+        # 2. 解析 VLESS+XHTTP 节点并生成 config.json
+        python3 << 'PYEOF'
         import os, json
         from urllib.parse import urlparse, parse_qs, unquote
 
@@ -66,10 +51,17 @@ jobs:
         p = urlparse(url)
         params = {k: v[0] for k, v in parse_qs(p.query).items()}
 
-        uuid = unquote(p.netloc.split('@')[0] if '@' in p.netloc else "") or p.username
-        sni = params.get("sni", p.hostname)
+        raw_auth = unquote(p.netloc.split('@')[0] if '@' in p.netloc else "")
+        uuid = raw_auth or p.username
+        server = p.hostname
+        port = int(p.port or 443)
+        sni = params.get("sni", server)
         path = unquote(params.get("path", "/"))
         host = params.get("host", sni)
+
+        # 动态读取链接中的跳过证书校验设置（如 allowInsecure=1 或 insecure=1）
+        insecure_param = params.get("allowInsecure", params.get("insecure", "")).lower()
+        allow_insecure = insecure_param in ["1", "true", "yes"]
 
         xhttp_settings = {
             "path": path,
@@ -78,31 +70,28 @@ jobs:
         if params.get("mode"):
             xhttp_settings["mode"] = params.get("mode")
 
+        tls_settings = {
+            "serverName": sni
+        }
+        if allow_insecure:
+            tls_settings["allowInsecure"] = True
+
         outbound = {
             "protocol": "vless",
             "settings": {
                 "vnext": [{
-                    "address": p.hostname,
-                    "port": int(p.port or 443),
+                    "address": server,
+                    "port": port,
                     "users": [{"id": uuid, "encryption": "none"}]
                 }]
             },
             "streamSettings": {
                 "network": "xhttp",
-                "security": "tls" if params.get("security") != "none" else "none",
-                "tlsSettings": {"serverName": sni, "allowInsecure": True},
+                "security": "tls",
+                "tlsSettings": tls_settings,
                 "xhttpSettings": xhttp_settings
             }
         }
-
-        if params.get("security") == "reality":
-            outbound["streamSettings"]["security"] = "reality"
-            outbound["streamSettings"]["realitySettings"] = {
-                "serverName": sni,
-                "publicKey": params.get("pbk", ""),
-                "shortId": params.get("sid", ""),
-                "fingerprint": params.get("fp", "chrome")
-            }
 
         config = {
             "log": {"loglevel": "info"},
@@ -114,94 +103,12 @@ jobs:
             json.dump(config, f, indent=2)
         PYEOF
 
-            ./xray run -c config.json > proxy.log 2>&1 &
-
-        else
-            echo "[INFO] 使用 Sing-box 核心..."
-            TAG=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-            VERSION=${TAG#v}
-            wget -q "https://github.com/SagerNet/sing-box/releases/download/\({TAG}/sing-box-\){VERSION}-linux-amd64.tar.gz"
-            tar -xzf "sing-box-${VERSION}-linux-amd64.tar.gz"
-            mv "sing-box-${VERSION}-linux-amd64/sing-box" . && chmod +x sing-box
-
-            python3 << 'PYEOF'
-        import os, json, base64
-        from urllib.parse import urlparse, parse_qs, unquote
-
-        def generate_singbox_config():
-            url = os.environ.get("PROXY_NODE", "").strip()
-            p = urlparse(url)
-            scheme = p.scheme.lower()
-            params = {k: v[0] for k, v in parse_qs(p.query).items()}
-            
-            config = {
-                "log": {"level": "info"},
-                "inbounds": [{"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": 10808}],
-                "outbounds": []
-            }
-            
-            raw_auth = unquote(p.netloc.split('@')[0] if '@' in p.netloc else "")
-            server = p.hostname
-            port = int(p.port or 443)
-            sni = params.get("sni", server)
-
-            outbound = {"tag": "proxy", "server": server, "server_port": port}
-
-            if scheme == "vless":
-                outbound.update({
-                    "type": "vless",
-                    "uuid": raw_auth or p.username,
-                    "packet_encoding": "xudp",
-                    "tls": {"enabled": True, "server_name": sni, "insecure": True}
-                })
-                if params.get("type") == "ws":
-                    outbound["transport"] = {
-                        "type": "ws",
-                        "path": unquote(params.get("path", "/")),
-                        "headers": {"Host": sni}
-                    }
-                if params.get("security") == "reality":
-                    outbound["tls"]["reality"] = {
-                        "enabled": True,
-                        "public_key": params.get("pbk", ""),
-                        "short_id": params.get("sid", "")
-                    }
-            elif scheme == "tuic":
-                u, pwd = raw_auth.split(':', 1) if ':' in raw_auth else (raw_auth, "")
-                outbound.update({
-                    "type": "tuic", "uuid": u, "password": pwd,
-                    "congestion_control": params.get("congestion_control", "cubic"),
-                    "tls": {"enabled": True, "server_name": sni, "alpn": ["h3"], "insecure": True}
-                })
-            elif scheme in ["hysteria2", "hy2"]:
-                outbound.update({
-                    "type": "hysteria2", "password": raw_auth,
-                    "tls": {"enabled": True, "server_name": sni, "insecure": True}
-                })
-            elif scheme == "vmess":
-                try:
-                    content = url[8:].split("#")[0]
-                    vm = json.loads(base64.b64decode(content + "="*(4-len(content)%4)).decode())
-                    outbound.update({"type": "vmess", "server": vm['add'], "server_port": int(vm['port']), "uuid": vm['id'], "security": "auto"})
-                    if vm.get('tls') == "tls":
-                        outbound["tls"] = {"enabled": True, "server_name": vm.get('sni', vm['add']), "insecure": True}
-                except: pass
-
-            config["outbounds"].append(outbound)
-            config["outbounds"].append({"type": "direct", "tag": "direct"})
-            return config
-
-        with open("config.json", "w") as f:
-            json.dump(generate_singbox_config(), f, indent=2)
-        PYEOF
-
-            ./sing-box run -c config.json > proxy.log 2>&1 &
-        fi
-
-        # 3. 等待握手与连通性最终验证
+        # 3. 后台运行并等待握手
+        ./xray run -c config.json > proxy.log 2>&1 &
         echo "[INFO] 正在等待代理建立连接 (15秒)..."
         sleep 15
 
+        # 4. 连通性最终验证
         if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://www.google.com > /dev/null; then
           echo "[INFO] ✅ 代理适配成功！"
           echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
@@ -210,6 +117,8 @@ jobs:
           cat proxy.log
           exit 1
         fi
+
+ 
 
     - name: 初始化 SeleniumBase 浏览器核心
       run: seleniumbase install chromedriver
