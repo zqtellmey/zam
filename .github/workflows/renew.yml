@@ -1,8 +1,8 @@
 name: Zam Auto Renew
 
 on:
-  schedule:
-    - cron: '0 2,3 * * *'
+ # schedule:
+ #   - cron: '0 2,3 * * *'
   workflow_dispatch:
 
 jobs:
